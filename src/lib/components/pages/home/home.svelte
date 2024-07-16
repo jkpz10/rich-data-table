@@ -4,29 +4,51 @@
 		Datatable,
 		ThSort,
 		Th,
-		Search,
 		RowsPerPage,
 		RowCount,
-		Pagination
+		Pagination,
+		check
 	} from '@vincjo/datatables';
-	import { Filter, SkeletonTable } from '$lib/components/common';
-	import { dataStore, fetchData, type FetchUserVaribles } from '$lib/store/fetchUserData';
+	import { Filter, SkeletonTable, Search } from '$lib/components/common';
+	import { Button, Modal } from 'flowbite-svelte';
+	import {
+		dataStore,
+		loadingStore,
+		errorStore,
+		fetchData,
+		type FetchUserVaribles
+	} from '$lib/store/fetchUserData';
 	import { onMount } from 'svelte';
-	import type { listItem, info, apiRes } from '$lib/components/pages/home/types';
+	import type { listItem, apiRes } from '$lib/components/pages/home/types';
 
-	let info: info;
 	let list: listItem[] = [];
-	let table = new TableHandler<listItem>();
+	let loading = $state(true);
+	let error: string | null = $state(null);
+	let table = $state(new TableHandler<listItem>());
+	let cityOptions: string[] = $state([]);
+	let countryOptions: string[] = $state([]);
+	let filterCity: any;
+	let filterCountry: any;
+	let search: any = $state();
+	let showFilter = $state(false);
+
 	let variables: FetchUserVaribles = {
 		page: 1,
 		limit: 100,
 		seed: ''
 	};
 
+	const handleFilterCity = (value: string | '') => {
+		filterCity.set(value);
+	};
+	const handleFilterCountry = (value: string | '') => {
+		filterCountry.set(value);
+	};
+
 	onMount(() => {
 		fetchData(variables);
-		const unsubscribe = dataStore.subscribe((value: apiRes | null) => {
-			if (!value?.results.length) return; //early return if gut null on list
+		const unsubscribeDataStore = dataStore.subscribe((value: apiRes | null) => {
+			if (!value?.results.length) return; // Early return if got null on list
 
 			const formattedList: listItem[] = value.results.map((item) => ({
 				id: window.crypto.randomUUID(),
@@ -37,12 +59,26 @@
 			}));
 
 			list = formattedList;
-
+			cityOptions = [...new Set(formattedList.map((item) => item.city))];
+			countryOptions = [...new Set(formattedList.map((item) => item.country))];
 			table = new TableHandler<listItem>(list, { rowsPerPage: 10, selectBy: 'id' });
+			filterCity = table.createAdvancedFilter('city', check.isEqualTo);
+			filterCountry = table.createAdvancedFilter('country', check.isEqualTo);
+			search = table.createSearch(['first_name', 'last_name']);
+		});
+
+		const unsubscribeLoadingStore = loadingStore.subscribe((value) => {
+			loading = value;
+		});
+
+		const unsubscribeErrorStore = errorStore.subscribe((value) => {
+			error = value;
 		});
 
 		return () => {
-			unsubscribe();
+			unsubscribeDataStore();
+			unsubscribeLoadingStore();
+			unsubscribeErrorStore();
 		};
 	});
 </script>
@@ -56,7 +92,13 @@
 		</p>
 	</div>
 	<!-- table render here -->
-	{#if list.length}
+	{#if loading}
+		<SkeletonTable />
+	{:else if error}
+		<div class="w-full border border-red-500 bg-red-200 rounded-md p-4">
+			<p>{error}</p>
+		</div>
+	{:else}
 		<div class="relative overflow-x-auto shadow-md sm:rounded-lg pt-4 border">
 			<Datatable {table}>
 				{#snippet header()}
@@ -65,8 +107,31 @@
 							<p class="text-lg font-semibold">User</p>
 						</div>
 						<div class="flex items-center justify-end gap-2 px-4">
-							<Search {table} />
-							<Filter />
+							<Search {search} setValue={() => search.set()} />
+							<button
+								id="dropdownRadioButton"
+								data-dropdown-toggle="dropdownRadio"
+								class="flex gap-1 items-center text-gray-500 bg-white border border-gray-300 focus:outline-none hover:bg-gray-100 focus:ring-4 focus:ring-gray-100 font-medium rounded-lg text-sm px-3 py-2"
+								type="button"
+								onclick={() => (showFilter = !showFilter)}
+							>
+								Filter
+								<svg
+									width="21"
+									height="20"
+									viewBox="0 0 20 20"
+									fill="none"
+									xmlns="http://www.w3.org/2000/svg"
+								>
+									<path
+										d="M5 10H15M2.5 5H17.5M7.5 15H12.5"
+										stroke="#344054"
+										stroke-width="1.66667"
+										stroke-linecap="round"
+										stroke-linejoin="round"
+									/>
+								</svg>
+							</button>
 						</div>
 					</div>
 				{/snippet}
@@ -124,7 +189,16 @@
 				</table>
 			</Datatable>
 		</div>
-	{:else}
-		<SkeletonTable />
 	{/if}
+	<Modal class="w-[500px]" title="Filter" bind:open={showFilter}>
+		<div class="flex flex-col items-start justify-center gap-3">
+			<Filter onSelect={handleFilterCity} title={'City'} options={cityOptions} />
+			<Filter onSelect={handleFilterCountry} title={'Country'} options={countryOptions} />
+		</div>
+		<svelte:fragment slot="footer">
+			<Button on:click={() => (showFilter = false)} class="border-0" color="alternative"
+				>Close</Button
+			>
+		</svelte:fragment>
+	</Modal>
 </div>
